@@ -31,6 +31,18 @@ def setup_database():
 # Bot holatlari
 MENU, ADD_NAME, ADD_ADDRESS, ADD_LANDMARK, ADD_INFO, RATE, DELETE_CONFIRM = range(7)
 
+def main():
+    # Ma'lumotlar bazasini sozlash
+    setup_database()
+    
+    # Bot tokenini to'g'ridan-to'g'ri berish
+    token = "8173628806:AAH0cpOKEvBfnlK0t3PSIOjpNx9E8Bwopps"  # O'z token qiymatingizni kiriting
+    
+    # Bot yaratish
+    application = ApplicationBuilder().token(token).build()
+    
+    # Qolgan kod...
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Bot ishga tushganda birinchi xabar"""
     keyboard = [
