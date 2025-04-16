@@ -375,15 +375,8 @@ def main():
     # Ma'lumotlar bazasini sozlash
     setup_database()
     
-    # Bot tokenini .env faylidan o'qish yoki to'g'ridan-to'g'ri sozlash
+    # Bot tokenini .env faylidan olish
     token = os.environ.get('BOT_TOKEN')
-    
-    # Agar token olinmagan bo'lsa, xatolik haqida xabar berish
-    if not token:
-        logging.error("BOT_TOKEN topilmadi! .env fayliga BOT_TOKEN ni qo'shing yoki bevosita Docker run bilan environment variable sifatida bering")
-        # Agar kerak bo'lsa, pastdagi satrni ochib qo'ying va o'z bot tokeningizni kiriting:
-        # token = "YOUR_BOT_TOKEN_HERE"
-        return
     
     # Bot yaratish
     application = ApplicationBuilder().token(token).build()
