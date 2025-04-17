@@ -376,7 +376,7 @@ def main():
     setup_database()
     
     # Bot tokeni
-    token = "8173628806:AAH0cpOKEvBfnlK0t3PSIOjpNx9E8Bwopps"
+    token = "7713917511:AAHFWbUngqXdCMPr8aC6kc1K2fmAMFvdv6M"
     
     # Bot yaratish
     application = ApplicationBuilder().token(token).build()
