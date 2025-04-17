@@ -407,6 +407,7 @@ def main():
     
     # Botni ishga tushirish (barcha pending update larni tashlab yuborgan holda)
     application.run_polling(drop_pending_updates=True)
-    
-    if __name__ == '__main__':
-    main(    )
+
+# Dastur kirish nuqtasi
+if __name__ == '__main__':
+    main()
