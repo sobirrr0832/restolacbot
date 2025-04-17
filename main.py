@@ -1,4 +1,3 @@
-# main.py
 import os
 import logging
 import sqlite3
@@ -371,25 +370,17 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Nima qilishni xohlaysiz?", reply_markup=reply_markup)
     return MENU
 
-# Xatoliklarni qayta ishlash funksiyasi
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Xatolarni qayta ishlash"""
-    logging.error(f"Update {update} caused error {context.error}")
-
 async def main():
     # Ma'lumotlar bazasini sozlash
     setup_database()
     
     # Bot tokeni
-    token = "7713917511:AAHFWbUngqXdCMPr8aC6kc1K2fmAMFvdv6M"  # Haqiqiy token kiriting
+    token = os.getenv("BOT_TOKEN", "7713917511:AAHFWbUngqXdCMPr8aC6kc1K2fmAMFvdv6M")
     
     # Bot yaratish
     application = ApplicationBuilder().token(token).build()
     
-    # Xatoliklarni qayta ishlash
-    application.add_error_handler(error_handler)
-    
-    # Avval webhook ni o'chirish - coroutine bo'lgani uchun await bilan chaqiramiz
+    # Avval webhook ni o'chirish
     await application.bot.delete_webhook(drop_pending_updates=True)
     
     # Suhbat modelini yaratish
@@ -405,7 +396,7 @@ async def main():
             DELETE_CONFIRM: [CallbackQueryHandler(delete_restaurant, pattern=r'^del_')]
         },
         fallbacks=[CommandHandler('cancel', cancel)],
-        per_message=True,  # Har bir xabar uchun alohida kuzatish
+        per_message=True
     )
     
     # Rate qilish uchun handler
@@ -413,12 +404,9 @@ async def main():
     
     # Suhbat modelini qo'shish
     application.add_handler(conv_handler)
-    
-    # Botni ishga tushirish
-    await application.start()
-    await application.run_polling(drop_pending_updates=True)
 
-# Dastur kirish nuqtasi
+    )
+
 if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
