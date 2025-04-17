@@ -31,18 +31,6 @@ def setup_database():
 # Bot holatlari
 MENU, ADD_NAME, ADD_ADDRESS, ADD_LANDMARK, ADD_INFO, RATE, DELETE_CONFIRM = range(7)
 
-def main():
-    # Ma'lumotlar bazasini sozlash
-    setup_database()
-    
-    # Bot tokenini to'g'ridan-to'g'ri berish
-    token = "8173628806:AAH0cpOKEvBfnlK0t3PSIOjpNx9E8Bwopps"  # O'z token qiymatingizni kiriting
-    
-    # Bot yaratish
-    application = ApplicationBuilder().token(token).build()
-    
-    # Qolgan kod...
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Bot ishga tushganda birinchi xabar"""
     keyboard = [
@@ -387,8 +375,14 @@ def main():
     # Ma'lumotlar bazasini sozlash
     setup_database()
     
-    # Bot tokenini .env faylidan olish
-    token = os.environ.get('BOT_TOKEN')
+    # Bot tokeni
+    # 1-usul: Token to'g'ridan-to'g'ri berish
+    token = "8173628806:AAH0cpOKEvBfnlK0t3PSIOjpNx9E8Bwopps"
+    
+    # 2-usul: Agar .env fayl orqali olmoqchi bo'lsangiz
+    # token = os.environ.get('BOT_TOKEN')
+    # if not token:
+    #     token = "8173628806:AAH0cpOKEvBfnlK0t3PSIOjpNx9E8Bwopps"  # Fallback token
     
     # Bot yaratish
     application = ApplicationBuilder().token(token).build()
