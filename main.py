@@ -376,16 +376,13 @@ def main():
     setup_database()
     
     # Bot tokeni
-    # 1-usul: Token to'g'ridan-to'g'ri berish
     token = "8173628806:AAH0cpOKEvBfnlK0t3PSIOjpNx9E8Bwopps"
-    
-    # 2-usul: Agar .env fayl orqali olmoqchi bo'lsangiz
-    # token = os.environ.get('BOT_TOKEN')
-    # if not token:
-    #     token = "8173628806:AAH0cpOKEvBfnlK0t3PSIOjpNx9E8Bwopps"  # Fallback token
     
     # Bot yaratish
     application = ApplicationBuilder().token(token).build()
+    
+    # Avval webhook ni o'chirish
+    application.bot.delete_webhook(drop_pending_updates=True)
     
     # Suhbat modelini yaratish
     conv_handler = ConversationHandler(
@@ -408,8 +405,7 @@ def main():
     # Suhbat modelini qo'shish
     application.add_handler(conv_handler)
     
-    # Botni ishga tushirish
-    application.run_polling()
-
-if __name__ == '__main__':
+    # Botni ishga tushirish (barcha pending update larni tashlab yuborgan holda)
+    application.run_polling(drop_pending_updates=True)
+    if __name__ == '__main__':
     main()
