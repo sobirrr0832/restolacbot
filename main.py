@@ -24,20 +24,61 @@ def setup_database():
         rating REAL DEFAULT 0
     )
     ''')
+    
+    # Admin jadvalini yaratish
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS admins (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER UNIQUE NOT NULL,
+        username TEXT,
+        added_date TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    
+    # Boshlang'ich admin qo'shish (agar kerak bo'lsa)
+    cursor.execute('SELECT COUNT(*) FROM admins')
+    if cursor.fetchone()[0] == 0:
+        # Super admin qo'shish - bu o'zingizning telegram ID raqamingiz bo'lishi kerak
+        super_admin_id = 123456789  # Buni o'zingizning Telegram ID raqamingiz bilan almashtiring
+        cursor.execute('INSERT OR IGNORE INTO admins (user_id, username) VALUES (?, ?)', 
+                      (super_admin_id, "super_admin"))
+    
     conn.commit()
     conn.close()
 
 # Bot holatlari
 MENU, ADD_NAME, ADD_ADDRESS, ADD_LANDMARK, ADD_INFO, RATE, DELETE_CONFIRM = range(7)
+ADMIN_MENU, ADMIN_ADD_USER, ADMIN_DELETE_USER, ADMIN_AUTH = range(7, 11)
+
+# Admin huquqlarini tekshirish
+async def check_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user_id = update.effective_user.id
+    conn = sqlite3.connect('restaurants.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM admins WHERE user_id = ?', (user_id,))
+    is_admin = cursor.fetchone()[0] > 0
+    conn.close()
+    return is_admin
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Bot ishga tushganda birinchi xabar"""
+    user_id = update.effective_user.id
+    is_admin = await check_admin(update, context)
+    
     keyboard = [
         [InlineKeyboardButton("Restoran qo'shish", callback_data='add')],
         [InlineKeyboardButton("Restoranlarni ko'rish", callback_data='view')],
         [InlineKeyboardButton("Restorani o'chirish", callback_data='delete')],
         [InlineKeyboardButton("Restoran tavsiya qilish", callback_data='recommend')]
     ]
+    
+    # Agar admin bo'lsa, admin-panelga kirish tugmasi ko'rsatiladi
+    if is_admin:
+        keyboard.append([InlineKeyboardButton("👑 ADMIN PANEL", callback_data='admin_panel')])
+    else:
+        # Admin bo'lmasa, admin kirish tugmasi ko'rsatiladi
+        keyboard.append([InlineKeyboardButton("Admin kirish", callback_data='admin_login')])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         "Assalomu alaykum! Restoran ma'lumotlari botiga xush kelibsiz. "
@@ -58,14 +99,251 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_restaurants(update, context)
         return MENU
     elif query.data == 'delete':
-        await delete_restaurant_prompt(update, context)
-        return DELETE_CONFIRM
+        is_admin = await check_admin(update, context)
+        if is_admin:
+            await delete_restaurant_prompt(update, context)
+            return DELETE_CONFIRM
+        else:
+            await query.message.reply_text("Kechirasiz, faqat adminlar restoran o'chirishga ruxsat berilgan.")
+            return MENU
     elif query.data == 'recommend':
         await recommend_restaurant(update, context)
         return MENU
+    elif query.data == 'admin_panel':
+        is_admin = await check_admin(update, context)
+        if is_admin:
+            await admin_panel(update, context)
+            return ADMIN_MENU
+        else:
+            await query.message.reply_text("Kechirasiz, siz admin emassiz.")
+            return MENU
+    elif query.data == 'admin_login':
+        await query.message.reply_text("Admin parolni kiriting:")
+        return ADMIN_AUTH
     else:
         return MENU
 
+# Admin autentifikatsiya
+async def admin_auth(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin parolini tekshirish"""
+    admin_password = "admin123"  # Bu parolni o'zingizga moslab o'zgartiring
+    
+    if update.message.text == admin_password:
+        user_id = update.effective_user.id
+        username = update.effective_user.username or "unknown"
+        
+        conn = sqlite3.connect('restaurants.db')
+        cursor = conn.cursor()
+        cursor.execute('INSERT OR IGNORE INTO admins (user_id, username) VALUES (?, ?)', 
+                      (user_id, username))
+        conn.commit()
+        conn.close()
+        
+        await update.message.reply_text("🎉 Siz muvaffaqiyatli admin sifatida ro'yxatdan o'tdingiz!")
+        await admin_panel(update, context)
+        return ADMIN_MENU
+    else:
+        await update.message.reply_text("❌ Noto'g'ri parol. Qaytadan urinib ko'ring yoki bekor qilish uchun /cancel.")
+        return ADMIN_AUTH
+
+# Admin panel
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin panel menyusi"""
+    keyboard = [
+        [InlineKeyboardButton("Adminlarni ko'rish", callback_data='view_admins')],
+        [InlineKeyboardButton("Admin qo'shish", callback_data='add_admin')],
+        [InlineKeyboardButton("Adminni o'chirish", callback_data='delete_admin')],
+        [InlineKeyboardButton("Statistika ko'rish", callback_data='view_stats')],
+        [InlineKeyboardButton("Asosiy menyuga qaytish", callback_data='back_to_main')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if update.callback_query:
+        await update.callback_query.message.reply_text("👑 ADMIN PANEL", reply_markup=reply_markup)
+    else:
+        await update.message.reply_text("👑 ADMIN PANEL", reply_markup=reply_markup)
+    return ADMIN_MENU
+
+async def admin_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin panel funksiyalari"""
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == 'view_admins':
+        await view_admins(update, context)
+        return ADMIN_MENU
+    elif query.data == 'add_admin':
+        await query.message.reply_text("Yangi adminning Telegram ID raqamini kiriting:")
+        return ADMIN_ADD_USER
+    elif query.data == 'delete_admin':
+        await delete_admin_prompt(update, context)
+        return ADMIN_DELETE_USER
+    elif query.data == 'view_stats':
+        await view_statistics(update, context)
+        return ADMIN_MENU
+    elif query.data == 'back_to_main':
+        keyboard = [
+            [InlineKeyboardButton("Restoran qo'shish", callback_data='add')],
+            [InlineKeyboardButton("Restoranlarni ko'rish", callback_data='view')],
+            [InlineKeyboardButton("Restorani o'chirish", callback_data='delete')],
+            [InlineKeyboardButton("Restoran tavsiya qilish", callback_data='recommend')],
+            [InlineKeyboardButton("👑 ADMIN PANEL", callback_data='admin_panel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.reply_text("Asosiy menyu:", reply_markup=reply_markup)
+        return MENU
+    else:
+        return ADMIN_MENU
+
+async def view_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin foydalanuvchilarini ko'rsatish"""
+    conn = sqlite3.connect('restaurants.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT user_id, username, added_date FROM admins')
+    admins = cursor.fetchall()
+    conn.close()
+    
+    if not admins:
+        if update.callback_query:
+            await update.callback_query.message.reply_text("Hozircha adminlar ro'yxati bo'sh.")
+        else:
+            await update.message.reply_text("Hozircha adminlar ro'yxati bo'sh.")
+    else:
+        admin_list = "👑 ADMINLAR RO'YXATI:\n\n"
+        for user_id, username, added_date in admins:
+            admin_list += f"ID: {user_id}\n"
+            admin_list += f"Username: @{username}\n"
+            admin_list += f"Qo'shilgan sana: {added_date}\n"
+            admin_list += "------------------------\n"
+        
+        if update.callback_query:
+            await update.callback_query.message.reply_text(admin_list)
+        else:
+            await update.message.reply_text(admin_list)
+    
+    # Admin menyusini qayta ko'rsatish
+    await admin_panel(update, context)
+
+async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Yangi admin qo'shish"""
+    try:
+        user_id = int(update.message.text)
+        username = "Unknown"  # Odatda foydalanuvchining nomini bilish qiyin, shuning uchun "Unknown"
+        
+        conn = sqlite3.connect('restaurants.db')
+        cursor = conn.cursor()
+        cursor.execute('INSERT OR IGNORE INTO admins (user_id, username) VALUES (?, ?)', 
+                      (user_id, username))
+        conn.commit()
+        conn.close()
+        
+        await update.message.reply_text(f"✅ Yangi admin (ID: {user_id}) muvaffaqiyatli qo'shildi!")
+    except ValueError:
+        await update.message.reply_text("❌ Noto'g'ri format. Iltimos faqat raqamlardan iborat ID kiriting.")
+    
+    # Admin menyusini qayta ko'rsatish
+    await admin_panel(update, context)
+    return ADMIN_MENU
+
+async def delete_admin_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin o'chirish uchun ro'yxat ko'rsatish"""
+    user_id = update.effective_user.id
+    
+    conn = sqlite3.connect('restaurants.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT user_id, username FROM admins WHERE user_id != ?', (user_id,))
+    admins = cursor.fetchall()
+    conn.close()
+    
+    if not admins:
+        if update.callback_query:
+            await update.callback_query.message.reply_text("O'chirish uchun boshqa adminlar yo'q.")
+        else:
+            await update.message.reply_text("O'chirish uchun boshqa adminlar yo'q.")
+        await admin_panel(update, context)
+        return ADMIN_MENU
+    
+    keyboard = []
+    for admin_id, username in admins:
+        display_name = f"@{username} ({admin_id})" if username else f"ID: {admin_id}"
+        keyboard.append([InlineKeyboardButton(display_name, callback_data=f'deladmin_{admin_id}')])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if update.callback_query:
+        await update.callback_query.message.reply_text("O'chirish uchun adminni tanlang:", reply_markup=reply_markup)
+    else:
+        await update.message.reply_text("O'chirish uchun adminni tanlang:", reply_markup=reply_markup)
+    return ADMIN_DELETE_USER
+
+async def delete_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Adminni o'chirish"""
+    query = update.callback_query
+    await query.answer()
+    
+    admin_id = int(query.data.split('_')[1])
+    
+    conn = sqlite3.connect('restaurants.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT username FROM admins WHERE user_id = ?', (admin_id,))
+    admin_data = cursor.fetchone()
+    
+    if admin_data:
+        username = admin_data[0] or f"ID: {admin_id}"
+        cursor.execute('DELETE FROM admins WHERE user_id = ?', (admin_id,))
+        conn.commit()
+        await query.message.reply_text(f"✅ Admin @{username} muvaffaqiyatli o'chirildi.")
+    else:
+        await query.message.reply_text("❌ Admin topilmadi.")
+    
+    conn.close()
+    
+    # Admin menyusini qayta ko'rsatish
+    await admin_panel(update, context)
+    return ADMIN_MENU
+
+async def view_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Statistikani ko'rsatish"""
+    conn = sqlite3.connect('restaurants.db')
+    cursor = conn.cursor()
+    
+    # Restoranlar soni
+    cursor.execute('SELECT COUNT(*) FROM restaurants')
+    restaurant_count = cursor.fetchone()[0]
+    
+    # O'rtacha reyting
+    cursor.execute('SELECT AVG(rating) FROM restaurants WHERE rating > 0')
+    avg_rating = cursor.fetchone()[0]
+    avg_rating = round(avg_rating, 2) if avg_rating else 0
+    
+    # Eng yuqori reytingli restoran
+    cursor.execute('SELECT name, rating FROM restaurants WHERE rating > 0 ORDER BY rating DESC LIMIT 1')
+    top_restaurant = cursor.fetchone()
+    
+    # Adminlar soni
+    cursor.execute('SELECT COUNT(*) FROM admins')
+    admin_count = cursor.fetchone()[0]
+    
+    conn.close()
+    
+    stats_text = "📊 STATISTIKA:\n\n"
+    stats_text += f"🏢 Restoranlar soni: {restaurant_count}\n"
+    stats_text += f"⭐ O'rtacha reyting: {avg_rating}\n"
+    
+    if top_restaurant:
+        stats_text += f"🥇 Eng yuqori reytingli restoran: {top_restaurant[0]} ({top_restaurant[1]}/5)\n"
+    
+    stats_text += f"👥 Adminlar soni: {admin_count}\n"
+    
+    if update.callback_query:
+        await update.callback_query.message.reply_text(stats_text)
+    else:
+        await update.message.reply_text(stats_text)
+    
+    # Admin menyusini qayta ko'rsatish
+    await admin_panel(update, context)
+
+# Qolgan funksiyalar (o'zgarishsiz)
 async def add_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Restoran nomini saqlash"""
     context.user_data['name'] = update.message.text
@@ -113,6 +391,9 @@ async def add_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(f"Restoran '{context.user_data['name']}' muvaffaqiyatli qo'shildi!")
     
+    # Admin yoki foydalanuvchi ekanligini tekshirish
+    is_admin = await check_admin(update, context)
+    
     # Asosiy menyuni qayta ko'rsatish
     keyboard = [
         [InlineKeyboardButton("Restoran qo'shish", callback_data='add')],
@@ -120,6 +401,10 @@ async def add_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Restorani o'chirish", callback_data='delete')],
         [InlineKeyboardButton("Restoran tavsiya qilish", callback_data='recommend')]
     ]
+    
+    if is_admin:
+        keyboard.append([InlineKeyboardButton("👑 ADMIN PANEL", callback_data='admin_panel')])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Nima qilishni xohlaysiz?", reply_markup=reply_markup)
     return MENU
@@ -163,6 +448,9 @@ async def show_restaurants(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await update.message.reply_text(info_text, reply_markup=reply_markup, parse_mode='Markdown')
     
+    # Admin yoki foydalanuvchi ekanligini tekshirish
+    is_admin = await check_admin(update, context)
+    
     # Asosiy menyuni qayta ko'rsatish
     keyboard = [
         [InlineKeyboardButton("Restoran qo'shish", callback_data='add')],
@@ -170,6 +458,10 @@ async def show_restaurants(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Restorani o'chirish", callback_data='delete')],
         [InlineKeyboardButton("Restoran tavsiya qilish", callback_data='recommend')]
     ]
+    
+    if is_admin:
+        keyboard.append([InlineKeyboardButton("👑 ADMIN PANEL", callback_data='admin_panel')])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     if update.callback_query:
@@ -224,6 +516,9 @@ async def save_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.message.reply_text(f"{rest_name} restoraniga {rating}/5 baho berdingiz.")
     
+    # Admin yoki foydalanuvchi ekanligini tekshirish
+    is_admin = await check_admin(update, context)
+    
     # Asosiy menyuni qayta ko'rsatish
     keyboard = [
         [InlineKeyboardButton("Restoran qo'shish", callback_data='add')],
@@ -231,6 +526,10 @@ async def save_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Restorani o'chirish", callback_data='delete')],
         [InlineKeyboardButton("Restoran tavsiya qilish", callback_data='recommend')]
     ]
+    
+    if is_admin:
+        keyboard.append([InlineKeyboardButton("👑 ADMIN PANEL", callback_data='admin_panel')])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.message.reply_text("Nima qilishni xohlaysiz?", reply_markup=reply_markup)
     return MENU
@@ -249,6 +548,9 @@ async def delete_restaurant_prompt(update: Update, context: ContextTypes.DEFAULT
         else:
             await update.message.reply_text("O'chirish uchun restoranlar yo'q.")
         
+        # Admin yoki foydalanuvchi ekanligini tekshirish
+        is_admin = await check_admin(update, context)
+        
         # Asosiy menyuni qayta ko'rsatish
         keyboard = [
             [InlineKeyboardButton("Restoran qo'shish", callback_data='add')],
@@ -256,6 +558,10 @@ async def delete_restaurant_prompt(update: Update, context: ContextTypes.DEFAULT
             [InlineKeyboardButton("Restorani o'chirish", callback_data='delete')],
             [InlineKeyboardButton("Restoran tavsiya qilish", callback_data='recommend')]
         ]
+        
+        if is_admin:
+            keyboard.append([InlineKeyboardButton("👑 ADMIN PANEL", callback_data='admin_panel')])
+        
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         if update.callback_query:
@@ -294,6 +600,9 @@ async def delete_restaurant(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.message.reply_text(f"Restoran '{rest_name}' o'chirildi.")
     
+    # Admin yoki foydalanuvchi ekanligini tekshirish
+    is_admin = await check_admin(update, context)
+    
     # Asosiy menyuni qayta ko'rsatish
     keyboard = [
         [InlineKeyboardButton("Restoran qo'shish", callback_data='add')],
@@ -301,6 +610,10 @@ async def delete_restaurant(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Restorani o'chirish", callback_data='delete')],
         [InlineKeyboardButton("Restoran tavsiya qilish", callback_data='recommend')]
     ]
+    
+    if is_admin:
+        keyboard.append([InlineKeyboardButton("👑 ADMIN PANEL", callback_data='admin_panel')])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.message.reply_text("Nima qilishni xohlaysiz?", reply_markup=reply_markup)
     return MENU
@@ -313,33 +626,34 @@ async def recommend_restaurant(update: Update, context: ContextTypes.DEFAULT_TYP
     restaurants = cursor.fetchall()
     conn.close()
     
-    if not restaurants:
+  if not restaurants:
         if update.callback_query:
             await update.callback_query.message.reply_text("Hozircha tavsiya qilish uchun restoranlar yo'q.")
         else:
             await update.message.reply_text("Hozircha tavsiya qilish uchun restoranlar yo'q.")
     else:
-        await (update.callback_query.message if update.callback_query else update.message).reply_text("⭐ Eng yaxshi restoranlar ⭐")
-        
-        for rest in restaurants:
+        recommendation_text = "🏆 TAVSIYA ETILGAN RESTORANLAR:\n\n"
+        for i, rest in enumerate(restaurants):
             rest_id, name, address, landmark, additional_info, rating = rest
             
-            info_text = f"🏢 *{name}*\n"
-            info_text += f"📍 Manzil: {address}\n"
+            recommendation_text += f"{i+1}. 🏢 *{name}* - ⭐ {rating}/5\n"
+            recommendation_text += f"📍 Manzil: {address}\n"
             
             if landmark:
-                info_text += f"🔍 Mo'ljal: {landmark}\n"
+                recommendation_text += f"🔍 Mo'ljal: {landmark}\n"
             
             if additional_info:
-                info_text += f"ℹ️ Qo'shimcha: {additional_info}\n"
+                recommendation_text += f"ℹ️ Qo'shimcha: {additional_info}\n"
             
-            if rating > 0:
-                info_text += f"⭐ Reyting: {rating}/5\n"
-            
-            if update.callback_query:
-                await update.callback_query.message.reply_text(info_text, parse_mode='Markdown')
-            else:
-                await update.message.reply_text(info_text, parse_mode='Markdown')
+            recommendation_text += "\n"
+        
+        if update.callback_query:
+            await update.callback_query.message.reply_text(recommendation_text, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(recommendation_text, parse_mode='Markdown')
+    
+    # Admin yoki foydalanuvchi ekanligini tekshirish
+    is_admin = await check_admin(update, context)
     
     # Asosiy menyuni qayta ko'rsatish
     keyboard = [
@@ -348,6 +662,10 @@ async def recommend_restaurant(update: Update, context: ContextTypes.DEFAULT_TYP
         [InlineKeyboardButton("Restorani o'chirish", callback_data='delete')],
         [InlineKeyboardButton("Restoran tavsiya qilish", callback_data='recommend')]
     ]
+    
+    if is_admin:
+        keyboard.append([InlineKeyboardButton("👑 ADMIN PANEL", callback_data='admin_panel')])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     if update.callback_query:
@@ -356,57 +674,47 @@ async def recommend_restaurant(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("Nima qilishni xohlaysiz?", reply_markup=reply_markup)
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Amalni bekor qilish"""
-    await update.message.reply_text("Amal bekor qilindi.")
-    
-    # Asosiy menyuni qayta ko'rsatish
-    keyboard = [
-        [InlineKeyboardButton("Restoran qo'shish", callback_data='add')],
-        [InlineKeyboardButton("Restoranlarni ko'rish", callback_data='view')],
-        [InlineKeyboardButton("Restorani o'chirish", callback_data='delete')],
-        [InlineKeyboardButton("Restoran tavsiya qilish", callback_data='recommend')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Nima qilishni xohlaysiz?", reply_markup=reply_markup)
-    return MENU
+    """Bekor qilish"""
+    await update.message.reply_text(
+        "Amal bekor qilindi. /start buyrug'ini yuborib qaytadan boshlashingiz mumkin.")
+    return ConversationHandler.END
 
-async def main():
-    # Ma'lumotlar bazasini sozlash
+def main():
+    """Bot ishga tushirish"""
+    # Ma'lumotlar bazasini tayyorlash
     setup_database()
     
-    # Bot tokeni
-    token = os.getenv("BOT_TOKEN", "7713917511:AAHFWbUngqXdCMPr8aC6kc1K2fmAMFvdv6M")
+    # Bot token olib uni ishga tushirish
+    bot_token = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+    application = ApplicationBuilder().token(bot_token).build()
     
-    # Bot yaratish
-    application = ApplicationBuilder().token(token).build()
-    
-    # Avval webhook ni o'chirish
-    await application.bot.delete_webhook(drop_pending_updates=True)
-    
-    # Suhbat modelini yaratish
+    # Asosiy suhbat logikasini yaratish
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
+        entry_points=[CommandHandler("start", start)],
         states={
             MENU: [CallbackQueryHandler(menu_handler)],
             ADD_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_name)],
             ADD_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_address)],
             ADD_LANDMARK: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_landmark)],
             ADD_INFO: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_info)],
-            RATE: [CallbackQueryHandler(save_rating, pattern=r'^star_')],
-            DELETE_CONFIRM: [CallbackQueryHandler(delete_restaurant, pattern=r'^del_')]
+            RATE: [CallbackQueryHandler(save_rating, pattern='^star_')],
+            DELETE_CONFIRM: [CallbackQueryHandler(delete_restaurant, pattern='^del_')],
+            ADMIN_MENU: [CallbackQueryHandler(admin_menu_handler)],
+            ADMIN_ADD_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_admin)],
+            ADMIN_DELETE_USER: [CallbackQueryHandler(delete_admin, pattern='^deladmin_')],
+            ADMIN_AUTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_auth)],
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        per_message=True
+        fallbacks=[CommandHandler("cancel", cancel)],
     )
-    
-    # Rate qilish uchun handler
-    application.add_handler(CallbackQueryHandler(rate_restaurant_prompt, pattern=r'^rate_'))
-    
-    # Suhbat modelini qo'shish
+
+    # Suhbatni qo'shish
     application.add_handler(conv_handler)
+    
+    # Reyting qilish uchun yana bir handler qo'shish
+    application.add_handler(CallbackQueryHandler(rate_restaurant_prompt, pattern='^rate_'))
+    
+    # Botni ishga tushirish
+    application.run_polling()
 
-    )
-
-if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+if __name__ == "__main__":
+    main()
