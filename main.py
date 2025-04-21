@@ -626,7 +626,7 @@ async def recommend_restaurant(update: Update, context: ContextTypes.DEFAULT_TYP
     restaurants = cursor.fetchall()
     conn.close()
     
-  if not restaurants:
+    if not restaurants:
         if update.callback_query:
             await update.callback_query.message.reply_text("Hozircha tavsiya qilish uchun restoranlar yo'q.")
         else:
@@ -652,6 +652,26 @@ async def recommend_restaurant(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             await update.message.reply_text(recommendation_text, parse_mode='Markdown')
     
+    # Admin yoki foydalanuvchi ekanligini tekshirish
+    is_admin = await check_admin(update, context)
+    
+    # Asosiy menyuni qayta ko'rsatish
+    keyboard = [
+        [InlineKeyboardButton("Restoran qo'shish", callback_data='add')],
+        [InlineKeyboardButton("Restoranlarni ko'rish", callback_data='view')],
+        [InlineKeyboardButton("Restorani o'chirish", callback_data='delete')],
+        [InlineKeyboardButton("Restoran tavsiya qilish", callback_data='recommend')]
+    ]
+    
+    if is_admin:
+        keyboard.append([InlineKeyboardButton("👑 ADMIN PANEL", callback_data='admin_panel')])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if update.callback_query:
+        await update.callback_query.message.reply_text("Nima qilishni xohlaysiz?", reply_markup=reply_markup)
+    else:
+        await update.message.reply_text("Nima qilishni xohlaysiz?", reply_markup=reply_markup)    
     # Admin yoki foydalanuvchi ekanligini tekshirish
     is_admin = await check_admin(update, context)
     
